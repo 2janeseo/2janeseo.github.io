@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Resell</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700;900&family=IBM+Plex+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <main class="story" aria-label="Ticket Resell">
+    <!-- 장면 그림(svg)은 images/scene-art.js 에 있고 script.js 에서 넣는다 -->
+
+    <!-- 1. 초대장 -->
+    <section class="story-frame intro-scene" id="frame-01" aria-labelledby="scene01-title">
+      <h2 class="scene__title" id="scene01-title">Ticket Resell - 티켓 재판매, 중고거래일까 암표일까?</h2>
+    </section>
+
+    <!-- 2. 첫 판단 / 설문 -->
+    <section class="story-frame paper paper-top choice-scene" id="frame-03" aria-labelledby="scene02-title">
+      <h2 class="scene__title" id="scene02-title">당신은 어디서부터 암표라고 생각하나요?</h2>
+    </section>
+
+    <!-- 3. 첫 판단 / CASE A -->
+    <section class="story-frame paper choice-scene" id="frame-04" aria-labelledby="scene03-title">
+      <h2 class="scene__title" id="scene03-title">이 거래는 암표일까요? (CASE A)</h2>
+    </section>
+
+    <!-- 4. 첫 판단 / CASE B -->
+    <section class="story-frame paper choice-scene" id="frame-05" aria-labelledby="scene04-title">
+      <h2 class="scene__title" id="scene04-title">이 거래는 암표일까요? (CASE B)</h2>
+    </section>
+
+    <!-- 5. 인식 / 응답자 목소리 -->
+    <section class="story-frame paper voice-scene" id="frame-06" aria-labelledby="scene05-title">
+      <h2 class="scene__title" id="scene05-title">사람들은 암표 거래를 어떻게 인식하고 있을까?</h2>
+    </section>
+
+    <!-- 6. 인식 / 언론과 팬의 목소리 -->
+    <section class="story-frame paper voice-scene" id="frame-07" aria-labelledby="scene06-title">
+      <h2 class="scene__title" id="scene06-title">사람들은 암표 거래를 어떻게 인식하고 있을까?</h2>
+    </section>
+
+    <!-- 7. 암표 구매 경험 -->
+    <section class="story-frame paper stat-scene" id="frame-08" aria-labelledby="scene07-title">
+      <h2 class="scene__title" id="scene07-title">암표를 구매해 본 사람은 얼마나 될까?</h2>
+    </section>
+
+    <!-- 8. 나이대 고르기 -->
+    <section class="story-frame paper age-scene" id="frame-09" data-state="pick" aria-labelledby="scene08-title">
+      <h2 class="scene__title" id="scene08-title">당신은 이 중 어디에 있나요?</h2>
+    </section>
+
+    <!-- 9. 이용자 인식 -->
+    <section class="story-frame paper donut-scene" id="frame-12" aria-labelledby="scene09-title">
+      <h2 class="scene__title" id="scene09-title">티켓 재판매/규제에 대한 이용자 인식</h2>
+    </section>
+
+    <!-- 10. 암표 거래 규모 -->
+    <section class="story-frame paper dots-scene" id="frame-13" aria-labelledby="scene10-title">
+      <h2 class="scene__title" id="scene10-title">암표 거래, 얼마나 될까?</h2>
+      <canvas class="dt-canvas" aria-hidden="true"></canvas>
+    </section>
+
+    <!-- 11. 가격 상승 -->
+    <section class="story-frame paper receipt-scene" id="frame-16" aria-labelledby="scene11-title">
+      <h2 class="scene__title" id="scene11-title">이 티켓, 얼마까지 올라갈까?</h2>
+    </section>
+
+    <!-- 12. 일반 예매 vs 매크로 -->
+    <section class="story-frame paper ticket-scene" id="frame-20" aria-labelledby="scene12-title">
+      <h2 class="scene__title" id="scene12-title">당신이 한 장을 예매하는 동안, 매크로는 몇 장을 가져갈까요?</h2>
+      <input class="tk-cap-input" type="text" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="보안문자 입력">
+    </section>
+
+    <!-- 13. 양도와 암표의 구분 -->
+    <section class="story-frame paper law-scene" id="frame-27" aria-labelledby="scene13-title">
+      <h2 class="scene__title" id="scene13-title">일반적인 티켓 양도와 암표는 어떻게 구분될까?</h2>
+    </section>
+
+    <!-- 14. 처벌 기준 -->
+    <section class="story-frame paper steps-scene" id="frame-28" aria-labelledby="scene14-title">
+      <h2 class="scene__title" id="scene14-title">처벌 여부를 가르는 주요 기준</h2>
+    </section>
+
+    <!-- 15. 거래 조건 체크 -->
+    <section class="story-frame paper check-scene" id="frame-29" aria-labelledby="scene15-title">
+      <h2 class="scene__title" id="scene15-title">거래 조건을 직접 체크해 보세요</h2>
+    </section>
+
+    <!-- 16. 규제 이후 플랫폼 -->
+    <section class="story-frame paper scene-slider" id="frame-34" data-scene="platform-shift" aria-labelledby="scene16-title">
+      <h2 class="scene__title" id="scene16-title">규제가 강화되면 암표는 사라질까?</h2>
+      <input class="scene-slider__range" type="range" min="0" max="1000" step="1" value="0" aria-label="연도 슬라이더 (2025 → 2026)" aria-valuetext="2025년">
+      <button class="scene-slider__rewind" type="button" aria-label="2025로 되감기"></button>
+    </section>
+
+    <!-- 17. 재판매의 목적 -->
+    <section class="story-frame paper resale-scene" id="frame-37" aria-labelledby="scene17-title">
+      <h2 class="scene__title" id="scene17-title">티켓 재판매 자체를 막으면 해결될까?</h2>
+    </section>
+
+    <!-- 18. 비공식 거래의 우려 -->
+    <section class="story-frame paper concern-scene" id="frame-38" aria-labelledby="scene18-title">
+      <h2 class="scene__title" id="scene18-title">비공식 거래가 늘어났을 때 우려점</h2>
+    </section>
+
+    <!-- 19. 다시 판단 / CASE A -->
+    <section class="story-frame paper choice-scene rejudge-scene" id="frame-39" data-case="A" aria-labelledby="scene19-title">
+      <h2 class="scene__title" id="scene19-title">이제 당신은 어디서부터 암표라고 생각하나요? (CASE A)</h2>
+    </section>
+
+    <!-- 20. 다시 판단 / CASE A 결과 -->
+    <section class="story-frame paper choice-scene rejudge-scene" id="frame-40" data-case="A" aria-labelledby="scene20-title">
+      <h2 class="scene__title" id="scene20-title">CASE A - 판단이 바뀌었나요?</h2>
+    </section>
+
+    <!-- 21. 다시 판단 / CASE B -->
+    <section class="story-frame paper choice-scene rejudge-scene" id="frame-41" data-case="B" aria-labelledby="scene21-title">
+      <h2 class="scene__title" id="scene21-title">이제 당신은 어디서부터 암표라고 생각하나요? (CASE B)</h2>
+    </section>
+
+    <!-- 22. 다시 판단 / CASE B 결과 -->
+    <section class="story-frame paper choice-scene rejudge-scene" id="frame-42" data-case="B" aria-labelledby="scene22-title">
+      <h2 class="scene__title" id="scene22-title">CASE B - 판단이 바뀌었나요?</h2>
+    </section>
+
+    <!-- 23. 마무리 -->
+    <section class="story-frame paper paper-end tear-scene" id="frame-43" aria-labelledby="scene23-title">
+      <h2 class="scene__title" id="scene23-title">같은 티켓이라도 어떻게 사고 어떻게 파느냐에 따라 암표가 됩니다.</h2>
+    </section>
+
+  </main>
+
+  <script src="images/scene-art.js" defer></script>
+  <script src="script.js" defer></script>
+</body>
+</html>
