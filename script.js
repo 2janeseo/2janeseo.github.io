@@ -8,7 +8,94 @@
 })();
 
 
-// 1. 초대장
+// 1. 스크롤 고정
+(function () {
+  'use strict';
+
+  var LEN = 1600;
+  var scenes = Array.prototype.slice.call(document.querySelectorAll('[data-lock]')).map(function (el) {
+    return { el: el, p: 0, len: parseFloat(el.getAttribute('data-lock')) || LEN };
+  });
+  if (!scenes.length) return;
+
+  function clamp(t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
+  function center(r) { var vh = window.innerHeight; return Math.max(0, (vh - r.height) / 2); }
+
+  window.sceneLock = function (el) {
+    for (var i = 0; i < scenes.length; i++) if (scenes[i].el === el) return scenes[i].p;
+    return null;
+  };
+  function notify() { window.dispatchEvent(new Event('scenelock')); }
+  window.sceneLockSet = function (el, p) {
+    for (var i = 0; i < scenes.length; i++) if (scenes[i].el === el) scenes[i].p = clamp(p);
+  };
+
+  window.lockTimeline = function (el, end, draw) {
+    if (!el.hasAttribute('data-lock')) return false;
+    var cur = -1, last = 0, raf = 0;
+    function tick(now) {
+      raf = 0;
+      var p = window.sceneLock(el), goal = p <= 0 ? -1 : Math.min(1, p / 0.9) * end;
+      var dt = last ? Math.min(50, now - last) : 16; last = now;
+      var speed = end / 700 * dt;
+      if (Math.abs(goal - cur) <= speed) cur = goal; else cur += goal > cur ? speed : -speed;
+      draw(cur);
+      if (cur !== goal) raf = requestAnimationFrame(tick); else last = 0;
+    }
+    function kick() { if (!raf) raf = requestAnimationFrame(tick); }
+    window.addEventListener('scenelock', kick);
+    draw(-1);
+    return true;
+  };
+
+  // 휠/터치 한 번의 이동량 dy 를 장면이 가져갈지 결정
+  function take(dy) {
+    for (var i = 0; i < scenes.length; i++) {
+      var s = scenes[i], r = s.el.getBoundingClientRect(), t = center(r);
+      var down = dy > 0 && s.p < 1 && r.top <= t + 1 && r.top > t - r.height * 0.5;
+      var up = dy < 0 && s.p > 0 && r.top >= t - 1 && r.top < t + r.height * 0.5;
+      if (down || up) {
+        if (Math.abs(r.top - t) > 0.5) window.scrollBy(0, r.top - t);
+        s.p = clamp(s.p + dy / s.len);
+        notify();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  window.addEventListener('wheel', function (e) {
+    var dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+    if (take(dy)) e.preventDefault();
+  }, { passive: false });
+
+  var ty = null;
+  window.addEventListener('touchstart', function (e) { ty = e.touches[0].clientY; }, { passive: true });
+  window.addEventListener('touchmove', function (e) {
+    if (ty === null) return;
+    var y = e.touches[0].clientY, dy = (ty - y) * 1.5;
+    ty = y;
+    if (take(dy)) e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener('keydown', function (e) {
+    var map = { ArrowDown: 80, ArrowUp: -80, PageDown: 400, PageUp: -400, ' ': e.shiftKey ? -400 : 400 };
+    if (!(e.key in map) || /input|textarea/i.test(e.target.tagName)) return;
+    if (take(map[e.key])) e.preventDefault();
+  });
+
+  // 스크롤바를 끌어서 건너뛴 경우: 위치로 진행도를 맞춤
+  window.addEventListener('scroll', function () {
+    scenes.forEach(function (s) {
+      var r = s.el.getBoundingClientRect(), t = center(r);
+      if (r.top > t + r.height * 0.5 && s.p !== 0) { s.p = 0; notify(); }
+      else if (r.top < t - r.height * 0.5 && s.p !== 1) { s.p = 1; notify(); }
+    });
+  }, { passive: true });
+})();
+
+
+// 2. 초대장
 (function () {
   'use strict';
 
@@ -18,7 +105,7 @@
   var START = [EX + 243 * ESX, EY + 166 * ESY, 1186 * ESX, 469 * ESY];
   var FS = 1401 / 1673;
   var END = [260 + 50 * FS, 146 + 177 * (787 / 940), 1573 * FS, 580 * (787 / 940)];
-  var LIFT = 115, ENV_DROP1 = 235, ENV_DROP2 = 620;
+  var LIFT = 170, ENV_DROP1 = 180, ENV_DROP2 = 300;
   var P1 = 950, P2 = 1900;
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -39,10 +126,11 @@
     var opened = false, t0 = 0;
 
     function draw(t) {
-      var d1 = easeInOut(seg(t, 0, P1)), d2 = easeInOut(seg(t, P1 - 120, P2 - 150));
+      var d1 = easeInOut(seg(t, 0, P1)), d2 = easeInOut(seg(t, P1 - 200, P2));
       var envDy = ENV_DROP1 * d1 + (ENV_DROP2 - ENV_DROP1) * d2;
-      env.setAttribute('transform', 'translate(0 ' + envDy.toFixed(2) + ')');
-      env.setAttribute('opacity', (t < 0 ? 0 : 1 - d2).toFixed(3));
+      var es = 1 - 0.12 * d2;
+      env.setAttribute('transform', 'translate(0 ' + envDy.toFixed(2) + ') translate(960 600) scale(' + es.toFixed(4) + ') translate(-960 -600)');
+      env.setAttribute('opacity', (t < 0 ? 0 : 1 - easeOut(seg(t, P1 - 200, P2 - 100))).toFixed(3));
       var up = easeOut(seg(t, 0, P1)), k = easeInOut(seg(t, P1 - 80, P2));
       var b = [lerp(START[0], END[0], k), lerp(START[1] - LIFT * up, END[1], k), lerp(START[2], END[2], k), lerp(START[3], END[3], k)];
       var rot = Math.sin(Math.PI * seg(t, 0, P2)) * -2.2;
@@ -58,12 +146,146 @@
       full.setAttribute('opacity', (1 - seg(t, 0, 90)).toFixed(3));
       if (t < 0) hint.style.opacity = ''; else hint.style.opacity = (0.75 * (1 - seg(t, 0, 250))).toFixed(3);
     }
+    var hit2 = $('.iv-hit2'), hint2 = $('.iv-hint2'), entering = false;
+    function ready() {
+      hit2.setAttribute('data-off', '0'); hit2.setAttribute('tabindex', '0');
+      hint2.setAttribute('opacity', '1'); hint2.classList.add('pulse');
+    }
+    function enter() {
+      if (entering) return;
+      entering = true;
+      var next = document.getElementById('frame-03');
+      if (reduce || !next || !document.body.animate) { if (next) next.scrollIntoView(); entering = false; return; }
+      var img = tm.querySelectorAll('image'); img = img[img.length - 1];
+      var r = img.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+      // 화면 위에 같은 초대장을 HTML 로 띄워서 3D 로 뒤집는다
+      var ov = document.createElement('div'); ov.className = 'iv-flip';
+      ov.innerHTML = '<div class="iv-flip-stage"><div class="iv-flip-card">' +
+        '<img class="iv-flip-front" src="images/img-02.png" alt="">' +
+        '<img class="iv-flip-back" src="images/img-02-back.png" alt=""></div></div>';
+      document.body.appendChild(ov);
+      var stage = ov.firstChild, card = stage.firstChild;
+      var BACK_POS = 'left:-4.57%;top:-4.34%;width:109.1%;height:109.1%';
+      card.lastChild.style.cssText = BACK_POS;
+      stage.style.cssText = 'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px';
+      ticket.setAttribute('opacity', '0'); hint2.setAttribute('opacity', '0'); hint2.classList.remove('pulse');
+      var dx = vw / 2 - (r.left + r.width / 2), dy = vh / 2 - (r.top + r.height / 2);
+      var sc = Math.min(1.2, vw * 0.78 / (r.width * 0.94));
+      var hold = 'translate(' + dx + 'px,' + dy + 'px) scale(' + sc + ')';
+      stage.animate([{ transform: 'translate(0,0) scale(1)' }, { transform: hold }],
+        { duration: 650, easing: 'cubic-bezier(.3,0,.2,1)', fill: 'forwards' });
+      var P = 'perspective(' + Math.round(r.width * 2.4) + 'px) ';
+      var flip = card.animate([
+        { transform: P + 'rotateY(0deg) scale(1)' },
+        { offset: 0.5, transform: P + 'rotateY(-90deg) scale(1.06)' },
+        { transform: P + 'rotateY(-180deg) scale(1)' }
+      ], { duration: 900, delay: 600, easing: 'cubic-bezier(.45,0,.3,1)', fill: 'both' });
+      flip.onfinish = function () {
+        // 뒷면이 가운데 멈추면 절취선을 따라 아래로 드래그해서 끊는다
+        ov.classList.add('is-wait');
+        var X = 69.8;
+
+        var pts = [], k = 0;
+        for (var y = 0; y <= 100.01; y += 1.6, k++) pts.push((X + (k % 2 ? 0.25 : -0.25)).toFixed(2) + '% ' + Math.min(100, y).toFixed(2) + '%');
+        card.remove();
+        function half(clip) {
+          var h = document.createElement('img'); h.className = 'iv-tear'; h.src = 'images/img-02-back.png'; h.alt = ''; h.draggable = false;
+          h.style.cssText = BACK_POS; h.style.clipPath = clip; h.style.webkitClipPath = clip;
+          h.style.transformOrigin = X + '% 96%'; stage.appendChild(h); return h;
+        }
+        var L = half('polygon(0 0,' + pts.join(',') + ',0 100%)');
+        var R = half('polygon(100% 0,' + pts.join(',') + ',100% 100%)');
+        var b = L.getBoundingClientRect();
+        var top = b.top + b.height * 0.178, H = b.height * 0.635, lineX = b.left + b.width * X / 100;
+        var tip = document.createElement('div'); tip.className = 'iv-flip-hint'; tip.textContent = '절취선을 따라 아래로 드래그해서 끊기';
+        var fs = hint2.ownerSVGElement.getScreenCTM().a;
+        tip.style.fontSize = (22 * fs).toFixed(1) + 'px'; tip.style.letterSpacing = fs.toFixed(2) + 'px';
+        tip.style.top = Math.min(vh - 48, top + H + 32) + 'px';
+        var guide = document.createElement('div'); guide.className = 'iv-tear-guide';
+        guide.style.left = lineX + 'px'; guide.style.top = top + 'px';
+        tip.style.opacity = '0'; guide.style.opacity = '0';
+        ov.appendChild(tip); ov.appendChild(guide);
+        setTimeout(function () { tip.style.transition = guide.style.transition = 'opacity .5s'; tip.style.opacity = ''; guide.style.opacity = ''; }, 350);
+
+        var prog = 0, startY = null, downX = 0, done = false;
+        var DIST = Math.max(140, H * 0.5);
+        ov.addEventListener('dragstart', function (e) { e.preventDefault(); });
+        function pose(t) {
+          prog = t;
+          L.style.transform = 'rotate(' + (-3 * t) + 'deg)';
+          R.style.transform = 'rotate(' + (7 * t) + 'deg)';
+          guide.style.top = (top + H * t) + 'px';
+        }
+        function noScroll(e) { e.preventDefault(); }
+        ov.addEventListener('wheel', noScroll, { passive: false });
+        ov.addEventListener('touchmove', noScroll, { passive: false });
+        ov.addEventListener('pointerdown', function (e) {
+          if (done) return;
+          e.preventDefault();
+          downX = e.clientX; startY = e.clientY - prog * DIST; ov.classList.add('is-drag'); guide.classList.add('is-on');
+          try { ov.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+        ov.addEventListener('pointermove', function (e) {
+          if (done || startY === null) return;
+          var d = Math.max(e.clientY - startY, Math.abs(e.clientX - downX));
+          var t = Math.max(0, Math.min(1, d / DIST));
+          pose(Math.max(t, prog * 0.98));
+          if (prog >= 0.75) rip();
+        });
+        function release() {
+          if (done || startY === null) return;
+          startY = null; ov.classList.remove('is-drag'); guide.classList.remove('is-on');
+          if (prog > 0.3) { rip(); return; }
+          // 덜 찢었으면 다시 붙는다
+          var from = prog, t0 = performance.now();
+          (function back(now) {
+            var q = Math.min(1, (now - t0) / 300);
+            pose(from * Math.pow(1 - q, 3));
+            if (q < 1 && startY === null) requestAnimationFrame(back);
+          })(t0);
+        }
+        ov.addEventListener('pointerup', release);
+        ov.addEventListener('pointercancel', release);
+        function rip() {
+          // 위에서 아래로 빠르게 찢어진 뒤 양쪽으로 갈라짐
+          done = true; var from = prog, t0 = performance.now();
+          ov.classList.remove('is-wait', 'is-drag'); tip.remove(); guide.remove();
+          (function go(now) {
+            var q = Math.min(1, (now - t0) / 320);
+            pose(from + (1 - from) * (1 - Math.pow(1 - q, 2)));
+            if (q < 1) requestAnimationFrame(go); else tear(L, R, 1);
+          })(t0);
+        }
+      };
+      function tear(L, R, t) {
+        var la = -3 * t, ra = 7 * t;
+        var opt = { duration: 3000, easing: 'linear', fill: 'forwards' };
+        var spread = 'cubic-bezier(.2,.7,.3,1)', away = 'cubic-bezier(.5,0,.5,1)';
+        L.animate([
+          { transform: 'translateX(0) rotate(' + la + 'deg)', easing: spread },
+          { offset: 0.18, transform: 'translateX(-70px) rotate(-2deg)', easing: away },
+          { transform: 'translateX(' + (-vw) + 'px) rotate(-4deg)' }
+        ], opt);
+        R.animate([
+          { transform: 'translateX(0) rotate(' + ra + 'deg)', easing: spread },
+          { offset: 0.18, transform: 'translateX(70px) rotate(6deg)', easing: away },
+          { transform: 'translateX(' + vw + 'px) rotate(8deg)' }
+        ], opt).onfinish = function () {
+            ov.remove(); ticket.setAttribute('opacity', '1'); hint2.setAttribute('opacity', '1'); hint2.classList.add('pulse');
+            entering = false;
+        };
+        setTimeout(function () { next.scrollIntoView({ block: 'start' }); }, 60);
+      }
+    }
+    hit2.addEventListener('click', function () { if (hit2.getAttribute('data-off') !== '1') enter(); });
+    hit2.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enter(); } });
+
     function open() {
       if (opened) return;
       opened = true; hit.setAttribute('data-off', '1'); hint.classList.remove('pulse');
-      if (reduce) { draw(P2); return; }
+      if (reduce) { draw(P2); ready(); return; }
       t0 = performance.now();
-      (function step(now) { var t = now - t0; draw(t); if (t < P2 + 30) requestAnimationFrame(step); })(t0);
+      (function step(now) { var t = now - t0; draw(t); if (t < P2 + 30) requestAnimationFrame(step); else ready(); })(t0);
     }
     draw(-1);
     hint.classList.add('pulse');
@@ -75,12 +297,12 @@
 })();
 
 
-// 2. 체크 / 도장 / 다시 판단
+// 3. 체크 / 도장 / 다시 판단
 (function () {
   'use strict';
 
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var DRAW_MS = 160;
+  var DRAW_MS = 240;
 
   var answers = { A: {}, B: {} };
 
@@ -91,6 +313,7 @@
     var len = pen.getTotalLength();
     pen.setAttribute('stroke-dasharray', len.toFixed(2));
     pen.setAttribute('stroke-dashoffset', len.toFixed(2));
+    if (window.penFollow) window.penFollow(pen, DRAW_MS, function (t) { return 1 - Math.pow(1 - t, 2.2); });
     var start = performance.now();
     (function step(now) {
       var t = Math.min(1, (now - start) / DRAW_MS);
@@ -199,7 +422,247 @@
 })();
 
 
-// 3. 말풍선 타이핑
+// 4. 펜 커서
+(function () {
+  'use strict';
+
+  if (!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
+
+  var KINDS = {
+    mint: { scenes: '.choice-scene, .rejudge-scene', body: '#3FC6E2', cap: '#364E7B', band: '#FFF4FD' },
+    omr: { scenes: '.check-scene', body: '#1E2230', cap: '#1E2230', band: '#FFFFFF' }
+  };
+
+  function makePen(k) {
+    var el = document.createElement('div');
+    el.className = 'pen-cursor';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML =
+      '<svg width="83" height="94" viewBox="0 0 64 72">' +
+      '<g transform="translate(3 4) rotate(32 5 60)">' +
+      '<rect x="0" y="0" width="10" height="13" rx="2" fill="' + k.cap + '"/>' +
+      '<rect x="0" y="13" width="10" height="34" fill="' + k.body + '"/>' +
+      '<rect x="0" y="22" width="10" height="5" fill="' + k.band + '" opacity=".9"/>' +
+      '<path d="M0 47H10L6.4 57H3.6Z" fill="#E9E4D8"/>' +
+      '<path d="M3.6 57H6.4L5 61Z" fill="' + k.cap + '"/>' +
+      '<rect x="1.5" y="2" width="2" height="40" rx="1" fill="#fff" opacity=".35"/>' +
+      '</g></svg>';
+    document.body.appendChild(el);
+    return el;
+  }
+  var pens = {};
+  Object.keys(KINDS).forEach(function (n) { pens[n] = makePen(KINDS[n]); });
+
+  var active = null, x = -100, y = -100, px = -100, py = -100, tilt = 0, raf = 0;
+  var follow = null;
+
+  window.penFollow = function (path, ms, ease) {
+    if (!active || !path.getTotalLength) return;
+    follow = { path: path, len: path.getTotalLength(), start: performance.now(), ms: ms, ease: ease || function (t) { return t; } };
+    kick();
+  };
+  function tipOnPath(f, now) {
+    var t = Math.min(1, (now - f.start) / f.ms);
+    var pt = f.path.getPointAtLength(f.len * f.ease(t)), m = f.path.getScreenCTM();
+    return { x: m.a * pt.x + m.c * pt.y + m.e, y: m.b * pt.x + m.d * pt.y + m.f, done: t >= 1 };
+  }
+  function kindAt(target) {
+    if (!target || !target.closest) return null;
+    if (target.closest('.rp-cover')) return null;
+    for (var n in KINDS) if (target.closest(KINDS[n].scenes)) return n;
+    return null;
+  }
+  function loop() {
+    raf = 0;
+    if (!active) return;
+    var now = performance.now(), ox = px;
+    if (follow) {
+      var tp = tipOnPath(follow, now);
+      px = tp.x; py = tp.y;
+      if (tp.done) follow = null;
+    } else {
+      px = x; py = y;
+    }
+    tilt += (Math.max(-12, Math.min(12, (px - ox) * 0.6)) - tilt) * 0.3;
+    pens[active].style.transform = 'translate3d(' + (px - 10).toFixed(1) + 'px,' + (py - 84).toFixed(1) + 'px,0) rotate(' + tilt.toFixed(1) + 'deg)';
+    if (follow || Math.abs(x - px) > 0.3 || Math.abs(y - py) > 0.3 || Math.abs(tilt) > 0.2) raf = requestAnimationFrame(loop);
+  }
+  function kick() { if (!raf) raf = requestAnimationFrame(loop); }
+
+  document.addEventListener('pointermove', function (e) {
+    if (e.pointerType !== 'mouse') return;
+    var k = kindAt(e.target);
+    if (k !== active) {
+      if (active) pens[active].classList.remove('is-on');
+      active = k;
+      document.documentElement.classList.toggle('pen-mode', !!k);
+      if (k) { px = e.clientX; py = e.clientY; pens[k].classList.add('is-on'); }
+    }
+    x = e.clientX; y = e.clientY; kick();
+  }, { passive: true });
+  document.addEventListener('mouseleave', function () {
+    if (active) pens[active].classList.remove('is-on');
+    active = null; document.documentElement.classList.remove('pen-mode');
+  });
+})();
+
+
+// 5. 재판매글 보기
+(function () {
+  'use strict';
+
+  var IDS = ['frame-04', 'frame-05'];
+  var NS = 'http://www.w3.org/2000/svg';
+  var CARD = { x: 375, y: 355, w: 1169, h: 393 };
+  var SITE = [
+    { url: 'secondhand-ticket.example/post/30412', tab: '[정가양도] 일행이 못 가게 돼서 남은 티켓 양도합니다' },
+    { url: 'secondhand-ticket.example/post/30988', tab: '[양도] 일행이 안 맞아서 야구 티켓 양도합니다' }
+  ];
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function setup(scene, n) {
+    var svg = scene.querySelector('svg.frame-svg');
+    var root = svg && svg.querySelector('g');
+    if (!root) return;
+    var site = SITE[scene.getAttribute('data-case') === 'B' || scene.id === 'frame-05' ? 1 : 0];
+
+    // 카드 안에 들어가는 그림만 한 묶음으로
+    var post = el('g', { 'class': 'rp-post' });
+    var parts = [];
+    Array.prototype.forEach.call(root.children, function (c) {
+      if (!c.getBBox) return;
+      var b; try { b = c.getBBox(); } catch (e) { return; }
+      if (b.width >= 1900) return;
+      if (b.x >= CARD.x - 4 && b.y >= CARD.y - 4 && b.x + b.width <= CARD.x + CARD.w + 4 && b.y + b.height <= CARD.y + CARD.h + 4) parts.push(c);
+    });
+    if (!parts.length) return;
+    // 카드 아래 질문 글 ('이 거래는 암표인가요?')
+    var qText = null;
+    Array.prototype.forEach.call(root.children, function (c) {
+      if (qText || !c.getBBox) return;
+      var b; try { b = c.getBBox(); } catch (e) { return; }
+      if (b.y > 845 && b.y < 885 && b.height < 45 && b.width > 200 && b.width < 360) qText = c;
+    });
+    root.insertBefore(post, parts[0]);
+    parts.forEach(function (c) { post.appendChild(c); });
+
+    // 흐리게 가리고 그 위에 버튼
+    var fid = 'rp-blur-' + n;
+    var f = el('filter', { id: fid, x: '-5%', y: '-5%', width: '110%', height: '110%' }, el('defs', {}, root));
+    var blur = el('feGaussianBlur', { stdDeviation: '9' }, f);
+    var view = post.cloneNode(true);
+    post.setAttribute('filter', 'url(#' + fid + ')');
+    post.setAttribute('opacity', '0.55');
+
+    var cover = el('g', { 'class': 'rp-cover', role: 'button', tabindex: '0', 'aria-label': '티켓 재판매글 보러가기' }, root);
+    el('rect', { x: CARD.x, y: CARD.y, width: CARD.w, height: CARD.h, rx: 14, fill: '#F6EEF6', 'fill-opacity': '0.35', stroke: '#364E7B', 'stroke-width': 2, 'stroke-dasharray': '8 8' }, cover);
+    var cx = CARD.x + CARD.w / 2, cy = CARD.y + CARD.h / 2;
+    var btn = el('g', { 'class': 'rp-btn' }, cover);
+    el('rect', { x: cx - 190, y: cy - 38, width: 380, height: 76, rx: 38, fill: '#364E7B' }, btn);
+    // 티켓 아이콘
+    var ix = cx - 160, iy = cy - 13;
+    el('path', { d: 'M' + ix + ' ' + iy + 'h36v7a4 4 0 0 0 0 12v7h-36v-7a4 4 0 0 0 0-12z',
+      fill: 'none', stroke: '#FFF4FD', 'stroke-width': 3.2, 'stroke-linejoin': 'round' }, btn);
+    el('path', { d: 'M' + (ix + 25) + ' ' + (iy + 4) + 'v18', stroke: '#FFF4FD', 'stroke-width': 2.4, 'stroke-dasharray': '3 3', 'stroke-linecap': 'round' }, btn);
+    var t = el('text', { x: cx + 18, y: cy + 9, 'text-anchor': 'middle', fill: '#FFF4FD', 'font-size': 26, 'font-weight': 700,
+      'font-family': "'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif" }, btn);
+    t.textContent = '티켓 재판매글 보러가기';
+    var sub = el('text', { x: cx, y: cy + 74, 'text-anchor': 'middle', fill: '#364E7B', 'font-size': 18, 'font-weight': 500,
+      'font-family': "'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif" }, cover);
+    sub.textContent = '중고 티켓 거래 사이트 · 판매글 1건';
+
+    function flash() {
+      // 팝업을 닫으면 질문 글이 형광펜 칠과 함께 반짝인다
+      if (!qText || reduce) return;
+      var b = qText.getBBox();
+      var mark = el('rect', { 'class': 'rp-mark', x: b.x - 8, y: b.y + b.height * 0.45, width: b.width + 16, height: b.height * 0.62, rx: 4, fill: '#3FC6E2' });
+      qText.parentNode.insertBefore(mark, qText);
+      qText.classList.remove('rp-flash'); void qText.getBBox(); qText.classList.add('rp-flash');
+      setTimeout(function () { mark.remove(); qText.classList.remove('rp-flash'); }, 2200);
+    }
+    function reveal() {
+      if (cover.classList.contains('is-open')) return;
+      cover.classList.add('is-open');
+      cover.setAttribute('aria-label', '티켓 재판매글 다시 크게 보기');
+      var t0 = performance.now(), D = reduce ? 0 : 550;
+      (function step(now) {
+        var q = D ? Math.min(1, (now - t0) / D) : 1, e = 1 - Math.pow(1 - q, 3);
+        blur.setAttribute('stdDeviation', (9 * (1 - e)).toFixed(2));
+        post.setAttribute('opacity', (0.55 + 0.45 * e).toFixed(3));
+        if (q < 1) requestAnimationFrame(step);
+        else { post.removeAttribute('filter'); post.removeAttribute('opacity'); }
+      })(t0);
+    }
+    function open() { show(view, site, cover, function () { reveal(); setTimeout(flash, reduce ? 0 : 350); }); }
+    cover.addEventListener('click', open);
+    cover.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+  }
+
+  // 사이트 창
+  var modal = null;
+  function show(view, site, from, after) {
+    if (modal) return;
+    modal = document.createElement('div');
+    modal.className = 'rp-modal';
+    modal.innerHTML =
+      '<div class="rp-win" role="dialog" aria-modal="true" aria-label="중고 티켓 거래 판매글">' +
+        '<div class="rp-bar"><i></i><i></i><i></i>' +
+          '<div class="rp-tab"></div>' +
+          '<button class="rp-x" type="button" aria-label="닫기">×</button></div>' +
+        '<div class="rp-addr"><span class="rp-nav">‹ ›</span><span class="rp-lock"></span><span class="rp-url"></span></div>' +
+        '<div class="rp-page"></div>' +
+      '</div>';
+    modal.querySelector('.rp-tab').textContent = site.tab;
+    modal.querySelector('.rp-url').textContent = site.url;
+    var s = document.createElementNS(NS, 'svg');
+    s.setAttribute('viewBox', (CARD.x - 2) + ' ' + (CARD.y - 2) + ' ' + (CARD.w + 4) + ' ' + (CARD.h + 4));
+    s.setAttribute('class', 'rp-view'); s.setAttribute('fill', 'none');
+    s.appendChild(view.cloneNode(true));
+    modal.querySelector('.rp-page').appendChild(s);
+    document.body.appendChild(modal);
+    document.documentElement.classList.add('rp-open');
+
+    var win = modal.querySelector('.rp-win');
+    if (!reduce && win.animate) {
+      var a = from.getBoundingClientRect(), b = win.getBoundingClientRect();
+      var sx = a.width / b.width, dx = (a.left + a.width / 2) - (b.left + b.width / 2), dy = (a.top + a.height / 2) - (b.top + b.height / 2);
+      win.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px) scale(' + sx + ')', opacity: 0 }, { transform: 'none', opacity: 1 }],
+        { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      modal.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300 });
+    }
+    function close() {
+      if (!modal) return;
+      var m = modal; modal = null;
+      document.removeEventListener('keydown', onKey);
+      document.documentElement.classList.remove('rp-open');
+      if (reduce || !m.animate) { m.remove(); return; }
+      m.style.pointerEvents = 'none';
+      m.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, fill: 'forwards' });
+      setTimeout(function () { m.remove(); }, 240);
+      setTimeout(function () { if (after) after(); }, 200);
+    }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    modal.querySelector('.rp-x').addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    modal.addEventListener('wheel', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
+  function init() {
+    IDS.forEach(function (id, i) { var s = document.getElementById(id); if (s) setup(s, i); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+
+
+// 6. 말풍선 타이핑
 (function () {
   'use strict';
 
@@ -278,6 +741,17 @@
   function setup(scene) {
     var voices = Array.prototype.map.call(scene.querySelectorAll('.voice'), makeVoice);
     voices.forEach(function (v) { hide(v); });
+    if (scene.hasAttribute('data-lock') && window.sceneLock) {
+      var order = voices.slice().sort(function (a, b) { return a.g.getBBox().y - b.g.getBBox().y; });
+      window.addEventListener('scenelock', function () {
+        var k = Math.ceil(Math.min(1, window.sceneLock(scene) / 0.9) * order.length - 0.15);
+        order.forEach(function (v, i) {
+          if (i < k && !v.on) { v.on = true; show(v); }
+          else if (i >= k && v.on) { v.on = false; hide(v); }
+        });
+      });
+      return;
+    }
     if (!('IntersectionObserver' in window)) { voices.forEach(show); return; }
     var byEl = new Map(voices.map(function (v) { return [v.g, v]; }));
     var io = new IntersectionObserver(function (entries) {
@@ -299,7 +773,7 @@
 })();
 
 
-// 4. 암표 구매 경험
+// 7. 암표 구매 경험
 (function () {
   'use strict';
 
@@ -377,6 +851,7 @@
     }
     function reset() { token++; playing = false; draw(-1); }
 
+    if (window.lockTimeline && window.lockTimeline(scene, END, draw)) return;
     reset();
     if (!('IntersectionObserver' in window)) { play(); return; }
     new IntersectionObserver(function (entries) {
@@ -391,7 +866,7 @@
 })();
 
 
-// 5. 나이대 고르기
+// 8. 나이대 고르기
 (function () {
   'use strict';
 
@@ -560,7 +1035,7 @@
 })();
 
 
-// 6. 이용자 인식
+// 9. 이용자 인식
 (function () {
   'use strict';
 
@@ -632,7 +1107,7 @@
 })();
 
 
-// 7. 암표 거래 규모
+// 10. 암표 거래 규모
 (function () {
   'use strict';
 
@@ -674,6 +1149,8 @@
   }
 
   function progress() {
+    var lock = window.sceneLock && window.sceneLock(scene);
+    if (lock !== null && lock !== undefined) return clamp(lock / 0.9);
     var r = scene.getBoundingClientRect(), vh = window.innerHeight;
     var start = vh - r.height * 0.8, end = Math.min(0, (vh - r.height) / 2);
     if (start <= end) return r.top <= end ? 1 : 0;
@@ -768,6 +1245,7 @@
   resize();
   window.addEventListener('resize', function () { resize(); kick(); });
   window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('scenelock', onScroll);
   if ('IntersectionObserver' in window) {
     new IntersectionObserver(function (en) { visible = en[0].isIntersecting; if (visible) kick(); }).observe(scene);
   } else visible = true;
@@ -775,12 +1253,13 @@
 })();
 
 
-// 8. 가격 상승
+// 11. 가격 상승
 (function () {
   'use strict';
 
   var ROW = 28;
   var RATE = 5;
+  var FEED = 7;
   var NAVY = '#364E7B', RED = '#D9434F', INK = '#2B2F3A';
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -799,6 +1278,7 @@
     var prem = JSON.parse(g.getAttribute('data-prem'));
     return {
       base: +g.getAttribute('data-base'), prem: prem, max: prem.length,
+      move: g.querySelector('.rc-move'), slot: +g.querySelector('.rc-move').getAttribute('data-slot'), len: 0,
       paper: g.querySelector('.rc-paper'), rows: g.querySelectorAll('.rc-row'), bottom: g.querySelector('.rc-bottom'),
       total: g.querySelector('.rc-total'), rmult: g.querySelector('.rc-rmult'),
       amount: top.querySelector('.rc-amount'), mult: top.querySelector('.rc-mult'),
@@ -809,7 +1289,14 @@
   });
   var MAX = Math.max.apply(null, receipts.map(function (r) { return r.max; }));
 
+  // 줄이 하나도 없을 때 영수증 길이 (투입구 ~ 아래 톱니 끝)
+  function measure(rc) {
+    try { var b = rc.bottom.getBBox(); rc.len = b.y + b.height - ROW * rc.max - rc.slot + 6; } catch (e) { rc.len = 420; }
+  }
+
   function progress() {
+    var lock = window.sceneLock && window.sceneLock(scene);
+    if (lock !== null && lock !== undefined) return clamp(lock / 0.9);
     var r = scene.getBoundingClientRect(), vh = window.innerHeight;
     var start = vh - r.height * 0.6, end = Math.min(0, (vh - r.height) / 2);
     if (start <= end) return r.top <= end ? 1 : 0;
@@ -823,7 +1310,11 @@
   function draw(now) {
     var busy = false;
     receipts.forEach(function (rc) {
-      var grow = Math.min(rc.max, s), n = Math.floor(grow + 1e-6), frac = grow - n;
+      if (!rc.len) measure(rc);
+      var f = clamp(s / FEED), e = 1 - Math.pow(1 - f, 2);
+      var jig = f > 0 && f < 1 ? Math.sin(now / 28) * 0.6 : 0;
+      rc.move.setAttribute('transform', 'translate(' + jig.toFixed(2) + ' ' + (-rc.len * (1 - e)).toFixed(2) + ')');
+      var grow = Math.min(rc.max, Math.max(0, s - FEED)), n = Math.floor(grow + 1e-6), frac = grow - n;
       var dy = -ROW * (rc.max - grow);
       rc.paper.setAttribute('transform', 'translate(0 ' + dy.toFixed(2) + ')');
       rc.bottom.setAttribute('transform', 'translate(0 ' + dy.toFixed(2) + ')');
@@ -865,18 +1356,19 @@
       s = target > s ? Math.min(target, s + step) : Math.max(target, s - step * 1.5);
       moving = true;
     }
-    if (draw(now) || moving) raf = requestAnimationFrame(loop); else lastT = 0;
+    if (draw(now) || moving || (s > 0 && s < FEED)) raf = requestAnimationFrame(loop); else lastT = 0;
   }
   function kick() { if (!raf) raf = requestAnimationFrame(loop); }
-  function onScroll() { target = progress() * MAX; kick(); }
+  function onScroll() { target = progress() * (FEED + MAX); kick(); }
 
   window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('scenelock', onScroll);
   window.addEventListener('resize', onScroll);
   onScroll();
 })();
 
 
-// 9. 일반 예매 vs 매크로
+// 12. 일반 예매 vs 매크로
 (function () {
   'use strict';
 
@@ -1288,7 +1780,7 @@
 })();
 
 
-// 10. 양도와 암표의 구분
+// 13. 양도와 암표의 구분
 (function () {
   'use strict';
 
@@ -1356,6 +1848,7 @@
       (function step(now) { if (my !== token) return; var t = now - start; draw(t); if (t < END) requestAnimationFrame(step); })(start);
     }
     function reset() { token++; playing = false; draw(-1); }
+    if (window.lockTimeline && window.lockTimeline(scene, END, draw)) return;
     reset();
     if (!('IntersectionObserver' in window)) { play(); return; }
     new IntersectionObserver(function (entries) {
@@ -1370,7 +1863,7 @@
 })();
 
 
-// 11. 처벌 기준
+// 14. 처벌 기준
 (function () {
   'use strict';
 
@@ -1422,6 +1915,7 @@
       (function step(now) { if (my !== token) return; var t = now - start; draw(t); if (t < END) requestAnimationFrame(step); })(start);
     }
     function reset() { token++; playing = false; draw(-1); }
+    if (window.lockTimeline && window.lockTimeline(scene, END, draw)) return;
     reset();
     if (!('IntersectionObserver' in window)) { play(); return; }
     new IntersectionObserver(function (entries) {
@@ -1436,7 +1930,7 @@
 })();
 
 
-// 12. 거래 조건 체크
+// 15. 거래 조건 체크
 (function () {
   'use strict';
 
@@ -1483,7 +1977,7 @@
     // 칠하기
     function paint(mk, on) {
       var start = performance.now(), my = ++mk.anim;
-      if (on) { mk.g.setAttribute('opacity', '1'); mk.fill.setAttribute('opacity', '0'); }
+      if (on) { mk.g.setAttribute('opacity', '1'); mk.fill.setAttribute('opacity', '0'); if (window.penFollow && !reduce) window.penFollow(mk.p, DRAW_MS); }
       (function step(now) {
         if (my !== mk.anim) return;
         var k = reduce ? 1 : clamp((now - start) / (on ? DRAW_MS : 160));
@@ -1626,7 +2120,7 @@
 })();
 
 
-// 13. 규제 이후 플랫폼
+// 16. 규제 이후 플랫폼
 (function () {
   'use strict';
 
@@ -1752,7 +2246,16 @@
     }
     function kick() { if (!raf) { last = 0; raf = requestAnimationFrame(tick); } }
 
-    range.addEventListener('input', function () { target = range.value / range.max; drawStatic(shown); kick(); });
+    range.addEventListener('input', function () {
+      target = range.value / range.max; drawStatic(shown); kick();
+      if (window.sceneLockSet) window.sceneLockSet(scene, target * 0.9);
+    });
+    if (scene.hasAttribute('data-lock') && window.sceneLock) {
+      window.addEventListener('scenelock', function () {
+        var p = Math.min(1, window.sceneLock(scene) / 0.9);
+        range.value = Math.round(p * range.max); target = p; drawStatic(shown); kick();
+      });
+    }
     range.addEventListener('pointerdown', function () { scene.classList.add('is-dragging'); });
     window.addEventListener('pointerup', function () { scene.classList.remove('is-dragging'); });
 
@@ -1760,6 +2263,7 @@
     if (rewind) {
       rewind.addEventListener('click', function () {
         range.value = 0; target = 0; drawStatic(shown); kick();
+        if (window.sceneLockSet) window.sceneLockSet(scene, 0);
       });
       rewind.addEventListener('pointerenter', function () { scene.classList.add('is-rewind-hover'); });
       rewind.addEventListener('pointerleave', function () { scene.classList.remove('is-rewind-hover'); });
@@ -1773,7 +2277,7 @@
 })();
 
 
-// 14. 재판매의 목적
+// 17. 재판매의 목적
 (function () {
   'use strict';
 
@@ -1865,6 +2369,14 @@
     ];
     blocks.forEach(function (b) { b.t0 = 0; b.on = false; b.draw(-1); });
 
+    var PARTS = [[0, 0.42], [0.36, 0.72], [0.66, 1]];
+    if (window.lockTimeline && window.lockTimeline(scene, 1000, function (T) {
+      blocks.forEach(function (b, i) {
+        var k = T < 0 ? -1 : (T / 1000 - PARTS[i][0]) / (PARTS[i][1] - PARTS[i][0]);
+        b.draw(k < 0 ? -1 : Math.min(1, k) * b.end);
+      });
+    })) return;
+
     var raf = 0;
     function tick(now) {
       raf = 0;
@@ -1893,7 +2405,7 @@
 })();
 
 
-// 15. 비공식 거래의 우려
+// 18. 비공식 거래의 우려
 (function () {
   'use strict';
 
@@ -1973,7 +2485,7 @@
 })();
 
 
-// 16. 마무리
+// 19. 마무리
 (function () {
   'use strict';
 
