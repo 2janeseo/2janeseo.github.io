@@ -692,9 +692,7 @@ body {
 }
 
 
-
-/* 펜 커서 */
-
+/* 펜 커서 (거래 조건 체크) */
 .pen-cursor {
   position: fixed;
   left: 0;
@@ -719,18 +717,9 @@ body {
 
 @media (pointer:fine) {
 
-  .pen-mode .choice-scene,
-  .pen-mode .choice-scene *,
-  .pen-mode .rejudge-scene,
-  .pen-mode .rejudge-scene *,
-  .pen-mode .check-scene,
-  .pen-mode .check-scene * {
+  .check-scene,
+  .check-scene * {
     cursor: none !important
-  }
-
-  .pen-mode .rp-cover,
-  .pen-mode .rp-cover * {
-    cursor: pointer !important
   }
 }
 
@@ -915,22 +904,6 @@ body {
   transform: scale(1.05)
 }
 
-.rp-cover .rp-btn rect {
-  animation: rp-glow 1.6s ease-in-out infinite
-}
-
-@keyframes rp-glow {
-
-  0%,
-  100% {
-    fill: #364E7B
-  }
-
-  50% {
-    fill: #4B66A0
-  }
-}
-
 .rp-modal {
   position: fixed;
   inset: 0;
@@ -1053,16 +1026,6 @@ body {
   display: block;
   width: 100%;
   height: auto
-}
-
-@media (prefers-reduced-motion:reduce) {
-  .rp-cover .rp-btn rect {
-    animation: none
-  }
-}
-
-.rp-open .pen-cursor {
-  opacity: 0 !important
 }
 
 .rp-modal,

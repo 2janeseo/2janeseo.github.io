@@ -313,7 +313,6 @@
     var len = pen.getTotalLength();
     pen.setAttribute('stroke-dasharray', len.toFixed(2));
     pen.setAttribute('stroke-dashoffset', len.toFixed(2));
-    if (window.penFollow) window.penFollow(pen, DRAW_MS, function (t) { return 1 - Math.pow(1 - t, 2.2); });
     var start = performance.now();
     (function step(now) {
       var t = Math.min(1, (now - start) / DRAW_MS);
@@ -429,7 +428,6 @@
   if (!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
 
   var KINDS = {
-    mint: { scenes: '.choice-scene, .rejudge-scene', body: '#3FC6E2', cap: '#364E7B', band: '#FFF4FD' },
     omr: { scenes: '.check-scene', body: '#1E2230', cap: '#1E2230', band: '#FFFFFF' }
   };
 
@@ -468,7 +466,6 @@
   }
   function kindAt(target) {
     if (!target || !target.closest) return null;
-    if (target.closest('.rp-cover')) return null;
     for (var n in KINDS) if (target.closest(KINDS[n].scenes)) return n;
     return null;
   }
@@ -495,14 +492,13 @@
     if (k !== active) {
       if (active) pens[active].classList.remove('is-on');
       active = k;
-      document.documentElement.classList.toggle('pen-mode', !!k);
       if (k) { px = e.clientX; py = e.clientY; pens[k].classList.add('is-on'); }
     }
     x = e.clientX; y = e.clientY; kick();
   }, { passive: true });
   document.addEventListener('mouseleave', function () {
     if (active) pens[active].classList.remove('is-on');
-    active = null; document.documentElement.classList.remove('pen-mode');
+    active = null;
   });
 })();
 
@@ -605,6 +601,10 @@
     cover.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
   }
 
+  function setPens(v) {
+    Array.prototype.forEach.call(document.querySelectorAll('.pen-cursor'), function (p) { p.style.visibility = v; });
+  }
+
   // 사이트 창
   var modal = null;
   function show(view, site, from, after) {
@@ -627,7 +627,7 @@
     s.appendChild(view.cloneNode(true));
     modal.querySelector('.rp-page').appendChild(s);
     document.body.appendChild(modal);
-    document.documentElement.classList.add('rp-open');
+    setPens('hidden');
 
     var win = modal.querySelector('.rp-win');
     if (!reduce && win.animate) {
@@ -641,7 +641,7 @@
       if (!modal) return;
       var m = modal; modal = null;
       document.removeEventListener('keydown', onKey);
-      document.documentElement.classList.remove('rp-open');
+      setPens('');
       if (reduce || !m.animate) { m.remove(); return; }
       m.style.pointerEvents = 'none';
       m.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, fill: 'forwards' });
