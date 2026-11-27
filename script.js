@@ -64,25 +64,7 @@
     return false;
   }
 
-  window.addEventListener('wheel', function (e) {
-    var dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
-    if (take(dy)) e.preventDefault();
-  }, { passive: false });
-
-  var ty = null;
-  window.addEventListener('touchstart', function (e) { ty = e.touches[0].clientY; }, { passive: true });
-  window.addEventListener('touchmove', function (e) {
-    if (ty === null) return;
-    var y = e.touches[0].clientY, dy = (ty - y) * 1.5;
-    ty = y;
-    if (take(dy)) e.preventDefault();
-  }, { passive: false });
-
-  window.addEventListener('keydown', function (e) {
-    var map = { ArrowDown: 80, ArrowUp: -80, PageDown: 400, PageUp: -400, ' ': e.shiftKey ? -400 : 400 };
-    if (!(e.key in map) || /input|textarea/i.test(e.target.tagName)) return;
-    if (take(map[e.key])) e.preventDefault();
-  });
+  window.sceneLockTake = take;
 
   // 스크롤바를 끌어서 건너뛴 경우: 위치로 진행도를 맞춤
   window.addEventListener('scroll', function () {
@@ -95,7 +77,145 @@
 })();
 
 
-// 2. 초대장
+// 2. 장면 단위 스크롤
+(function () {
+  'use strict';
+
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var DUR = reduce ? 0 : 550;
+  var QUIET = 120;
+  var SKIP_MS = 2500;
+  var HOLD = 450;
+
+  var scenes = Array.prototype.slice.call(document.querySelectorAll('section.story-frame:not([hidden])'));
+  if (!scenes.length) return;
+
+  // 직접 해 보는 장면과 '다 했다'의 기준
+  function clicked(el) { return !!el.__acted; }
+  var TASKS = [
+    { sel: '.intro-scene', done: clicked },
+    { sel: '.choice-scene', done: clicked },
+    { sel: '.age-scene', done: clicked },
+    { sel: '.ticket-scene', done: function (el) { var r = el.querySelector('.tk-result'); return !!r && r.getAttribute('display') === 'inline'; } },
+    { sel: '.check-scene', done: function (el) { return el.querySelectorAll('.ck-res[display="inline"]').length > 0; } }
+  ];
+  function task(el) {
+    for (var i = 0; i < TASKS.length; i++) if (el.matches(TASKS[i].sel)) return TASKS[i];
+    return null;
+  }
+  scenes.forEach(function (el) {
+    if (task(el)) el.addEventListener('click', function () { el.__acted = true; });
+  });
+
+  // 안내 문구
+  var tip = document.createElement('div');
+  tip.className = 'snap-tip';
+  tip.setAttribute('role', 'status');
+  tip.textContent = '한 번 더 스크롤하면 다음 장면으로 넘어가요';
+  document.body.appendChild(tip);
+  var tipT = 0;
+  function showTip() {
+    tip.classList.add('on');
+    clearTimeout(tipT);
+    tipT = setTimeout(function () { tip.classList.remove('on'); }, SKIP_MS);
+  }
+
+  function targetY(el) {
+    var r = el.getBoundingClientRect(), vh = window.innerHeight;
+    var y = window.scrollY + r.top - (r.height < vh ? (vh - r.height) / 2 : 0);
+    return Math.max(0, Math.min(y, document.documentElement.scrollHeight - vh));
+  }
+  function current() {
+    var mid = window.innerHeight / 2, best = 0, bd = Infinity;
+    scenes.forEach(function (el, i) {
+      var r = el.getBoundingClientRect(), d = Math.abs(r.top + r.height / 2 - mid);
+      if (d < bd) { bd = d; best = i; }
+    });
+    return best;
+  }
+
+  var anim = 0, busy = false, endT = 0, takeT = 0, lastWheel = 0, armed = -1e9;
+  function ease(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function go(i) {
+    i = Math.max(0, Math.min(scenes.length - 1, i));
+    if (i > 0 && window.unlockIntro) window.unlockIntro();
+    var from = window.scrollY, to = targetY(scenes[i]), t0 = performance.now();
+    cancelAnimationFrame(anim);
+    armed = -1e9; tip.classList.remove('on');
+    if (!DUR || Math.abs(to - from) < 2) { window.scrollTo(0, to); busy = false; return; }
+    busy = true;
+    (function step(now) {
+      var q = Math.min(1, (now - t0) / DUR);
+      window.scrollTo(0, from + (to - from) * ease(q));
+      if (q < 1) anim = requestAnimationFrame(step); else { busy = false; endT = performance.now(); }
+    })(t0);
+  }
+
+  // 스크롤 한 번 (dir: 1 아래, -1 위)
+  function page(dir) {
+    var i = current(), el = scenes[i], c = targetY(el);
+    if (el.getAttribute('data-busy') === '1') return;
+    if (Math.abs(window.scrollY - c) > 40) { go(i); return; }
+    if (dir > 0) {
+      var t = task(el);
+      if (t && !t.done(el) && performance.now() - armed > SKIP_MS) { armed = performance.now(); showTip(); return; }
+    }
+    go(i + dir);
+  }
+
+  function blocked(e) {
+    if (e.defaultPrevented) return true;
+    return !!document.querySelector('.rp-modal, .tk-pop.is-on, .iv-flip');
+  }
+
+  var lastAbs = 0;
+  function freshWheel(dy, now) {
+    var a = Math.abs(dy), quiet = now - lastWheel > QUIET;
+    var boost = a > 12 && a > lastAbs * 1.6 && now - endT > 150;
+    lastWheel = now; lastAbs = a;
+    return quiet || boost;
+  }
+
+  window.addEventListener('wheel', function (e) {
+    if (blocked(e) || e.ctrlKey) return;
+    var dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+    var fresh = freshWheel(dy, performance.now());
+    e.preventDefault();
+    if (busy) return;
+    if (window.sceneLockTake && window.sceneLockTake(dy)) { takeT = performance.now(); return; }
+    if (!fresh && performance.now() - takeT < HOLD * 4) return;
+    if (!fresh || Math.abs(dy) < 2) return;
+    page(dy > 0 ? 1 : -1);
+  }, { passive: false });
+
+  var ty = null, acc = 0, lockedTouch = false;
+  window.addEventListener('touchstart', function (e) { ty = e.touches[0].clientY; acc = 0; lockedTouch = false; }, { passive: true });
+  window.addEventListener('touchmove', function (e) {
+    if (ty === null || blocked(e)) return;
+    var y = e.touches[0].clientY, dy = (ty - y) * 1.5;
+    ty = y;
+    if (window.sceneLockTake && window.sceneLockTake(dy)) { lockedTouch = true; takeT = performance.now(); e.preventDefault(); return; }
+    acc += dy; e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('touchend', function () {
+    if (ty === null) return;
+    ty = null;
+    if (!lockedTouch && !busy && Math.abs(acc) > 60) page(acc > 0 ? 1 : -1);
+  }, { passive: true });
+
+  window.addEventListener('keydown', function (e) {
+    var map = { ArrowDown: 1, PageDown: 1, ArrowUp: -1, PageUp: -1, ' ': e.shiftKey ? -1 : 1 };
+    if (!(e.key in map) || blocked(e)) return;
+    var t = e.target;
+    if (t && (/input|textarea|select|button/i.test(t.tagName) || t.isContentEditable)) return;
+    if (window.sceneLockTake && window.sceneLockTake(map[e.key] * 120)) { e.preventDefault(); return; }
+    e.preventDefault();
+    if (!busy) page(map[e.key]);
+  });
+})();
+
+
+// 3. 초대장
 (function () {
   'use strict';
 
@@ -151,11 +271,17 @@
       hit2.setAttribute('data-off', '0'); hit2.setAttribute('tabindex', '0');
       hint2.setAttribute('opacity', '1'); hint2.classList.add('pulse');
     }
+    var root = document.documentElement;
+    root.classList.add('intro-lock');
+    function unlock() { root.classList.remove('intro-lock'); }
+    window.addEventListener('scroll', function () { if (window.scrollY > 4) unlock(); }, { passive: true });
+    window.unlockIntro = unlock;
+
     function enter() {
       if (entering) return;
       entering = true;
       var next = document.getElementById('frame-03');
-      if (reduce || !next || !document.body.animate) { if (next) next.scrollIntoView(); entering = false; return; }
+      if (reduce || !next || !document.body.animate) { unlock(); if (next) next.scrollIntoView(); entering = false; return; }
       var img = tm.querySelectorAll('image'); img = img[img.length - 1];
       var r = img.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
       // 화면 위에 같은 초대장을 HTML 로 띄워서 3D 로 뒤집는다
@@ -274,7 +400,8 @@
             ov.remove(); ticket.setAttribute('opacity', '1'); hint2.setAttribute('opacity', '1'); hint2.classList.add('pulse');
             entering = false;
         };
-        setTimeout(function () { next.scrollIntoView({ block: 'start' }); }, 60);
+        unlock();
+        setTimeout(function () { next.scrollIntoView({ block: 'center' }); }, 60);
       }
     }
     hit2.addEventListener('click', function () { if (hit2.getAttribute('data-off') !== '1') enter(); });
@@ -297,7 +424,7 @@
 })();
 
 
-// 3. 체크 / 도장 / 다시 판단
+// 4. 체크 / 도장 / 다시 판단
 (function () {
   'use strict';
 
@@ -421,7 +548,7 @@
 })();
 
 
-// 4. 펜 커서
+// 5. 펜 커서
 (function () {
   'use strict';
 
@@ -486,15 +613,21 @@
   }
   function kick() { if (!raf) raf = requestAnimationFrame(loop); }
 
+  function setKind(k) {
+    if (k === active) return;
+    if (active) pens[active].classList.remove('is-on');
+    active = k;
+    if (k) { px = x; py = y; pens[k].classList.add('is-on'); kick(); }
+  }
   document.addEventListener('pointermove', function (e) {
     if (e.pointerType !== 'mouse') return;
-    var k = kindAt(e.target);
-    if (k !== active) {
-      if (active) pens[active].classList.remove('is-on');
-      active = k;
-      if (k) { px = e.clientX; py = e.clientY; pens[k].classList.add('is-on'); }
-    }
-    x = e.clientX; y = e.clientY; kick();
+    x = e.clientX; y = e.clientY;
+    setKind(kindAt(e.target));
+    kick();
+  }, { passive: true });
+  window.addEventListener('scroll', function () {
+    if (x < 0) return;
+    setKind(kindAt(document.elementFromPoint(x, y)));
   }, { passive: true });
   document.addEventListener('mouseleave', function () {
     if (active) pens[active].classList.remove('is-on');
@@ -503,7 +636,7 @@
 })();
 
 
-// 5. 재판매글 보기
+// 6. 재판매글 보기
 (function () {
   'use strict';
 
@@ -529,25 +662,9 @@
     if (!root) return;
     var site = SITE[scene.getAttribute('data-case') === 'B' || scene.id === 'frame-05' ? 1 : 0];
 
-    // 카드 안에 들어가는 그림만 한 묶음으로
-    var post = el('g', { 'class': 'rp-post' });
-    var parts = [];
-    Array.prototype.forEach.call(root.children, function (c) {
-      if (!c.getBBox) return;
-      var b; try { b = c.getBBox(); } catch (e) { return; }
-      if (b.width >= 1900) return;
-      if (b.x >= CARD.x - 4 && b.y >= CARD.y - 4 && b.x + b.width <= CARD.x + CARD.w + 4 && b.y + b.height <= CARD.y + CARD.h + 4) parts.push(c);
-    });
-    if (!parts.length) return;
-    // 카드 아래 질문 글 ('이 거래는 암표인가요?')
-    var qText = null;
-    Array.prototype.forEach.call(root.children, function (c) {
-      if (qText || !c.getBBox) return;
-      var b; try { b = c.getBBox(); } catch (e) { return; }
-      if (b.y > 845 && b.y < 885 && b.height < 45 && b.width > 200 && b.width < 360) qText = c;
-    });
-    root.insertBefore(post, parts[0]);
-    parts.forEach(function (c) { post.appendChild(c); });
+    var post = root.querySelector('.rp-post');
+    if (!post) return;
+    var qText = root.querySelector('.rp-q');
 
     // 흐리게 가리고 그 위에 버튼
     var fid = 'rp-blur-' + n;
@@ -662,7 +779,7 @@
 })();
 
 
-// 6. 말풍선 타이핑
+// 7. 말풍선 타이핑
 (function () {
   'use strict';
 
@@ -773,7 +890,7 @@
 })();
 
 
-// 7. 암표 구매 경험
+// 8. 암표 구매 경험
 (function () {
   'use strict';
 
@@ -866,7 +983,7 @@
 })();
 
 
-// 8. 나이대 고르기
+// 9. 나이대 고르기
 (function () {
   'use strict';
 
@@ -1035,7 +1152,7 @@
 })();
 
 
-// 9. 이용자 인식
+// 10. 이용자 인식
 (function () {
   'use strict';
 
@@ -1107,7 +1224,7 @@
 })();
 
 
-// 10. 암표 거래 규모
+// 11. 암표 거래 규모
 (function () {
   'use strict';
 
@@ -1162,12 +1279,13 @@
   // shown 을 target 쪽으로 RATE 속도로 옮김
   function step(now) {
     var dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0.016; lastT = now;
-    if (shown === target) return false;
+    if (shown === target) { scene.setAttribute('data-busy', '0'); return false; }
     var next = reduce ? target : (target > shown ? Math.min(target, shown + Math.max(1, Math.round(RATE * dt)))
                                                  : Math.max(target, shown - Math.max(1, Math.round(RATE * 1.5 * dt))));
     if (next > shown) { for (var i = shown; i < next; i++) land[i] = reduce ? -1e9 : now; }
     else { for (var j = next; j < shown; j++) land[j] = undefined; }
     shown = next;
+    scene.setAttribute('data-busy', shown !== target ? '1' : '0');
     countEl.textContent = (shown >= N ? TOTAL : shown * PER).toLocaleString('en-US');
     setDone(shown >= N);
     return true;
@@ -1253,7 +1371,7 @@
 })();
 
 
-// 11. 가격 상승
+// 12. 가격 상승
 (function () {
   'use strict';
 
@@ -1368,7 +1486,7 @@
 })();
 
 
-// 12. 일반 예매 vs 매크로
+// 13. 일반 예매 vs 매크로
 (function () {
   'use strict';
 
@@ -1626,6 +1744,7 @@
   }
   var piles, shards, shardC = [];
   function showResult(sec) {
+    closePop();
     S.phase = 'result'; S.resultT = performance.now(); S.resultSec = sec;
     $('.tk-res-line .l1').textContent = '당신이 ' + human(sec) + ' 동안';
     result.setAttribute('display', 'inline'); result.style.opacity = '0';
@@ -1729,12 +1848,79 @@
       .then(function () { if (my === S && S.step === 4) pay(); });
   }
 
+  // 예매 창 (팝업)
+  var CROP = { x: 352, y: 332, w: 1212, h: 626 };
+  var layers = Array.prototype.filter.call(scene.children, function (c) { return c.tagName.toLowerCase() === 'svg'; });
+  var pop = null, popOpen = false;
+  function buildPop() {
+    pop = document.createElement('div');
+    pop.className = 'tk-pop';
+    pop.innerHTML =
+      '<div class="tk-pop-win" role="dialog" aria-modal="true" aria-label="TIXX 예매 창">' +
+        '<div class="tk-pop-bar"><i></i><i></i><i></i><span>TIXX · 2026 WORLD TOUR CONCERT 예매</span>' +
+          '<button class="tk-pop-x" type="button" aria-label="예매 창 닫기">×</button></div>' +
+        '<div class="tk-pop-view"><div class="tk-pop-inner"></div></div>' +
+      '</div>';
+    scene.appendChild(pop);
+    pop.addEventListener('click', function (e) { if (e.target === pop) closePop(); });
+    pop.querySelector('.tk-pop-x').addEventListener('click', function () { closePop(); });
+    pop.addEventListener('wheel', function (e) { e.preventDefault(); }, { passive: false });
+    pop.addEventListener('touchmove', function (e) { if (e.target === pop) e.preventDefault(); }, { passive: false });
+  }
+  var papers = null;
+  function paper(on) {
+    if (!papers) papers = Array.prototype.filter.call(layers[0].querySelectorAll('rect'), function (r) { return +r.getAttribute('width') === 1334; });
+    papers.forEach(function (r) { r.style.display = on ? '' : 'none'; });
+  }
+  function fitPop() {
+    var vw = window.innerWidth, vh = window.innerHeight, bar = 40;
+    var k = Math.min(vw * 0.94 / CROP.w, (vh * 0.92 - bar) / CROP.h);
+    var view = pop.querySelector('.tk-pop-view'), inner = pop.querySelector('.tk-pop-inner');
+    view.style.width = (CROP.w * k) + 'px'; view.style.height = (CROP.h * k) + 'px';
+    inner.style.width = (1920 * k) + 'px'; inner.style.height = (1080 * k) + 'px';
+    inner.style.left = (-CROP.x * k) + 'px'; inner.style.top = (-CROP.y * k) + 'px';
+  }
+  function openPop() {
+    if (popOpen || !layers.length) return;
+    if (!pop) buildPop();
+    popOpen = true;
+    scene.style.height = scene.getBoundingClientRect().height + 'px';
+    scene.scrollIntoView({ block: 'center' });
+    var inner = pop.querySelector('.tk-pop-inner');
+    layers.forEach(function (l) { inner.appendChild(l); }); inner.appendChild(input);
+    paper(false);
+    fitPop(); pop.classList.add('is-on');
+    window.addEventListener('resize', fitPop);
+    document.addEventListener('keydown', onPopKey);
+    var win = pop.querySelector('.tk-pop-win');
+    if (!reduce && win.animate) {
+      win.animate([{ transform: 'scale(.9) translateY(24px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      pop.animate([{ backgroundColor: 'rgba(14,18,30,0)' }, { backgroundColor: 'rgba(14,18,30,.6)' }], { duration: 300 });
+    }
+  }
+  function closePop() {
+    if (!popOpen) return;
+    popOpen = false;
+    window.removeEventListener('resize', fitPop);
+    document.removeEventListener('keydown', onPopKey);
+    pop.classList.remove('is-on');
+    layers.slice().reverse().forEach(function (l) { scene.insertBefore(l, scene.firstChild); }); scene.appendChild(input);
+    scene.style.height = '';
+    paper(true);
+  }
+  function onPopKey(e) { if (e.key === 'Escape') closePop(); }
+
   // 클릭 연결
   scene.addEventListener('click', function (e) {
     var h = e.target.closest('.tk-hit, .tk-auto, .tk-again');
     if (!h || !scene.contains(h)) return;
-    if (h.closest('.tk-auto')) { runAuto(); return; }
+    if (h.closest('.tk-auto')) { openPop(); runAuto(); return; }
     if (h.closest('.tk-again')) { reset(); return; }
+    if (!popOpen && S.phase !== 'result') {
+      openPop();
+      if (h.classList.contains('h-start') && !S.autoMode) { act(); start(); }
+      return;
+    }
     if (S.autoMode) return;
     act();
     var c = h.classList;
@@ -1780,7 +1966,7 @@
 })();
 
 
-// 13. 양도와 암표의 구분
+// 14. 양도와 암표의 구분
 (function () {
   'use strict';
 
@@ -1796,7 +1982,7 @@
 
   function setup(scene) {
     function $(s) { return scene.querySelector(s); }
-    var def = $('.lw-def'), stamp = $('.lw-stamp'), stats = $('.lw-stats');
+    var def = $('.lw-def'), stamp = $('.lw-stamp'), stats = $('.lw-stats'), head = $('.lw-head');
     var cards = Array.prototype.slice.call(scene.querySelectorAll('.lw-card'));
     var nums = Array.prototype.slice.call(scene.querySelectorAll('.lw-num'));
     var sop = +stamp.getAttribute('data-op') || 1;
@@ -1833,6 +2019,7 @@
       ring.setAttribute('r', (bb[2] * (0.95 + 0.45 * easeOut(rg))).toFixed(1));
       ring.setAttribute('opacity', rg > 0 && rg < 1 ? (0.55 * (1 - rg)).toFixed(3) : '0');
       ring.setAttribute('stroke-width', (6 * (1 - rg) + 1).toFixed(2));
+      if (head) rise(head, easeOut(seg(t, CARD_AT - 250, CARD_AT + 150)), 14);
       cards.forEach(function (c, i) { rise(c, easeOut(seg(t, CARD_AT + i * CARD_GAP, CARD_AT + i * CARD_GAP + 450)), 24); });
       rise(stats, easeOut(seg(t, NUM_AT - 200, NUM_AT + 200)), 12);
       var n = easeOut(seg(t, NUM_AT, NUM_AT + NUM_MS));
@@ -1863,7 +2050,7 @@
 })();
 
 
-// 14. 처벌 기준
+// 15. 처벌 기준
 (function () {
   'use strict';
 
@@ -1930,7 +2117,7 @@
 })();
 
 
-// 15. 거래 조건 체크
+// 16. 거래 조건 체크
 (function () {
   'use strict';
 
@@ -2120,7 +2307,7 @@
 })();
 
 
-// 16. 규제 이후 플랫폼
+// 17. 규제 이후 플랫폼
 (function () {
   'use strict';
 
@@ -2277,7 +2464,7 @@
 })();
 
 
-// 17. 재판매의 목적
+// 18. 재판매의 목적
 (function () {
   'use strict';
 
@@ -2405,7 +2592,7 @@
 })();
 
 
-// 18. 비공식 거래의 우려
+// 19. 비공식 거래의 우려
 (function () {
   'use strict';
 
@@ -2485,7 +2672,7 @@
 })();
 
 
-// 19. 마무리
+// 20. 마무리
 (function () {
   'use strict';
 

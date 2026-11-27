@@ -725,9 +725,14 @@ body {
 
 .intro-scene {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   justify-content: center
+}
+
+.intro-lock .story>.story-frame:not(.intro-scene) {
+  visibility: hidden
 }
 
 .intro-scene .iv-hit2 {
@@ -1091,6 +1096,112 @@ body {
 
 .rp-cover.is-open>* {
   opacity: 0
+}
+
+/* 예매 창 (팝업) */
+.story-frame.paper>.tk-pop {
+  position: fixed;
+  inset: 0;
+  z-index: 80 !important;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(14, 18, 30, .6);
+  line-height: normal
+}
+
+.story-frame.paper>.tk-pop.is-on {
+  display: flex
+}
+
+.tk-pop-win {
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .5)
+}
+
+.tk-pop-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px 0 14px;
+  background: #E9E6EE;
+  font: 500 13px/1 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  color: #364E7B
+}
+
+.tk-pop-bar i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #F26B6B
+}
+
+.tk-pop-bar i:nth-child(2) {
+  background: #F5BF4F
+}
+
+.tk-pop-bar i:nth-child(3) {
+  background: #5FC566
+}
+
+.tk-pop-bar span {
+  flex: 1;
+  margin-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.tk-pop-x {
+  border: 0;
+  background: none;
+  color: #364E7B;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px
+}
+
+.tk-pop-view {
+  position: relative;
+  overflow: hidden
+}
+
+.tk-pop-inner {
+  position: absolute
+}
+
+.tk-pop-inner>svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%
+}
+
+/* 장면 단위 스크롤 안내 */
+.snap-tip {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 70;
+  transform: translate(-50%, 12px);
+  padding: 10px 18px;
+  border-radius: 20px;
+  background: rgba(30, 34, 48, .88);
+  color: #FFF4FD;
+  font: 500 14px/1.3 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s, transform .25s
+}
+
+.snap-tip.on {
+  opacity: 1;
+  transform: translate(-50%, 0)
 }
 
 /* 장면 제목 (화면에서는 숨김) */
